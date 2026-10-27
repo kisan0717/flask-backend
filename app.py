@@ -6,7 +6,7 @@ app = Flask(__name__)
 @app.route("/")
 def home():
     return jsonify({
-        "message": "Flask backend v2",
+        "message": "Flask backend v3 is running",
         "status": "success"
     })
 
