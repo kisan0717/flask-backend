@@ -1,4 +1,4 @@
-
+```groovy
 pipeline {
     agent any
 
@@ -39,10 +39,15 @@ pipeline {
                     test -f app.py
                     test -f requirements.txt
 
-                    rsync -av --delete \
+                    rsync -r --delete \
+                        --no-perms \
+                        --no-owner \
+                        --no-group \
                         --exclude='venv/' \
                         --exclude='test-venv/' \
                         --exclude='.git/' \
+                        --exclude='__pycache__/' \
+                        --exclude='.pytest_cache/' \
                         ./ "$DEPLOY_DIR/"
 
                     "$VENV/bin/pip" install \
@@ -70,3 +75,4 @@ pipeline {
         }
     }
 }
+```
