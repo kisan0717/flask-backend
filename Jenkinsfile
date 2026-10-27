@@ -53,10 +53,20 @@ pipeline {
                         -r "$DEPLOY_DIR/requirements.txt"
 
                     sudo /usr/bin/systemctl restart flask
-                    sudo /usr/bin/systemctl is-active flask
 
-                    curl --fail --silent --show-error \
-                        http://127.0.0.1:5000/
+                    for i in $(seq 1 10); do
+                        if curl --fail --silent --show-error \
+                            http://127.0.0.1:5000/; then
+                            echo "Flask deployment successful!"
+                            exit 0
+                        fi
+                        sleep 2
+                    done
+
+                    echo "Flask failed to respond after restart."
+                    sudo /usr/bin/systemctl status flask --no-pager || true
+                    sudo /usr/bin/journalctl -u flask -n 50 --no-pager || true
+                    exit 1
                 '''
             }
         }
