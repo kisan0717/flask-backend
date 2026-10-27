@@ -6,6 +6,6 @@ def test_homepage():
 
     assert response.status_code == 200
     assert response.get_json() == {
-        "message": "Flask backend is running",
+        "message": "Flask backend v3 is running",
         "status": "success"
     }
