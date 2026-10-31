@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -12,6 +13,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 checkout scm
@@ -22,10 +24,19 @@ pipeline {
             steps {
                 sh '''
                     set -eu
+
+                    echo "Creating test environment..."
+
                     python3 -m venv test-venv
+
+                    echo "Installing dependencies..."
+
                     test-venv/bin/pip install -r requirements.txt
                     test-venv/bin/pip install pytest
-                    test-venv/bin/python -m pytest
+
+                    echo "Running Flask tests..."
+
+                    test-venv/bin/python -m pytest -v
                 '''
             }
         }
@@ -35,10 +46,15 @@ pipeline {
                 sh '''
                     set -eu
 
+                    echo "Validating Flask application files..."
+
                     test -f app.py
+                    test -f config.py
                     test -f requirements.txt
 
-                    rsync -r --delete \
+                    echo "Copying application files to EC2..."
+
+                    rsync -r \
                         --no-perms \
                         --no-owner \
                         --no-group \
@@ -47,40 +63,72 @@ pipeline {
                         --exclude='.git/' \
                         --exclude='__pycache__/' \
                         --exclude='.pytest_cache/' \
+                        --exclude='.env' \
                         ./ "$DEPLOY_DIR/"
+
+                    echo "Installing production dependencies..."
 
                     "$VENV/bin/pip" install \
                         -r "$DEPLOY_DIR/requirements.txt"
 
+                    echo "Restarting Flask service..."
+
                     sudo /usr/bin/systemctl restart flask
 
-                    for i in $(seq 1 10); do
-                        if curl --fail --silent --show-error \
-                            http://127.0.0.1:5000/; then
-                            echo "Flask deployment successful!"
-                            exit 0
+                    echo "Waiting for Flask to become healthy..."
+
+                    for i in $(seq 1 15); do
+
+                        if curl --fail --silent \
+                            http://127.0.0.1:5000/health >/dev/null; then
+
+                            echo "Flask health check passed."
+                            break
                         fi
+
+                        if [ "$i" -eq 15 ]; then
+                            echo "ERROR: Flask failed to start."
+
+                            sudo /usr/bin/systemctl status flask --no-pager || true
+
+                            exit 1
+                        fi
+
+                        echo "Waiting for Flask... attempt $i"
                         sleep 2
                     done
 
-                    echo "Flask failed to respond after restart."
-                    sudo /usr/bin/systemctl status flask --no-pager || true
-                    sudo /usr/bin/journalctl -u flask -n 50 --no-pager || true
-                    exit 1
+                    echo "Checking Flask homepage..."
+
+                    curl --fail --silent --show-error \
+                        http://127.0.0.1:5000/ \
+                        | grep -q '"status":"success"'
+
+                    echo "Checking Flask through Nginx..."
+
+                    curl --fail --silent --show-error \
+                        http://127.0.0.1/api/health \
+                        | grep -q '"status":"healthy"'
+
+                    echo "Flask deployment completed successfully."
                 '''
             }
         }
     }
 
     post {
+
         success {
-            echo 'Flask deployment successful!'
+            echo 'SUCCESS: Flask backend deployed successfully.'
         }
+
         failure {
-            echo 'Flask deployment failed. Check the console output.'
+            echo 'FAILURE: Flask deployment failed. Check Console Output.'
         }
+
         always {
             sh 'rm -rf test-venv'
+            echo 'Flask CI/CD pipeline execution completed.'
         }
     }
 }
